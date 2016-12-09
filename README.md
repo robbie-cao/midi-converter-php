@@ -19,6 +19,13 @@ The class provides methods to generate and manipulate MIDI data and to import an
 - <a href="http://flashmusicgames.com/midi/mid2rttl.php"><b>midi</b> to rttl converter</a> - Simple binary <b>midi</b> file to RTTL ringtone conversion
 - <a href="http://flashmusicgames.com/midi/rttl2mid.php">rttl to <b>midi</b> converter</a> - RTTL ringtone to binary <b>midi</b> file conversion
 
+## Usage
+
+```
+php midi2xml.php xxx.mid [> xxx.xml]
+php midi2txt.php xxx.mid [> xxx.txt]
+```
+
 ## Reference
 
 - <a href="http://www.midi.org/">MIDI Manufacturers Association (MMA)</a>
