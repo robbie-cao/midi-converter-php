@@ -24,6 +24,7 @@ The class provides methods to generate and manipulate MIDI data and to import an
 ```
 php midi2xml.php xxx.mid [> xxx.xml]
 php midi2txt.php xxx.mid [> xxx.txt]
+php midi2score.php xxx.mid
 ```
 
 ## Reference

@@ -40,7 +40,9 @@ if ($file != '') {
     $midi = new Midi();
     $midi->importMid($file);
     $score = $midi->getScore($tt);
-    echo $score;
+    $myfile = fopen($file . ".ssc", "w");
+    fwrite($myfile, $score);
+    fclose($myfile); 
 }
 
 ?>

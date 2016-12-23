@@ -272,6 +272,208 @@ function importTrackTxt($txt, $tn){
 // returns MIDI song as score
 //---------------------------------------------------------------
 function getScore($ttype=0){ //0:absolute, 1:delta
+	$str = "";
+	
+	$timebase = $this->timebase;
+	$tracks = $this->tracks;
+	$tc = count($tracks);
+	
+	$ks = 0;
+	$ts = 0;
+
+	/*
+	 *Currently only support midi file which contain 1 or 2 tracks.
+	 *If there are more than 2 tracks, only the first track will be handled.
+	 *tc
+	 * 0          : Invalid (Should not happen)
+	 * 1          : Only 1 track. No tempo, key signature and time signature setting.
+	 * 2 (or more): Multiple tracks. Tempo, key signature and time signature setting in track 0.
+	*/
+
+	//0 track, invalid and just return	
+	if ($tc==0) {
+		return;
+		}
+
+	$trk_no = 0;
+
+	// 2 or more tracks, get tempo, key signature and time signature in trakc 0
+	if ($tc>=2) {
+		$track = $this->tracks[$trk_no];
+		$trk_no = $trk_no + 1;
+		foreach ($track as $msgStr){
+			$msg = explode (' ', $msgStr);
+			switch ($msg[1]){
+				case 'KeySig':
+					// upper 3 bits for signature
+					$ks = (int) $msg[2];
+					$ks =  $ks << 3;
+					// lower 3 bits for scale: 0 - Major, 1 - Minor
+					if($msg[3]=='major'){
+						$ks = $ks + 0;
+					}
+					else{
+						$ks = $ks + 1;
+					}
+					break;
+				case 'TimeSig':
+					// formate like x/y
+					// upper 2 bits for denominator
+					// 0 - x/1 (NOT USE), 1 - x/2, 2 - x/4, 3 - x/8
+					$ts_msg = explode('/', $msg[2]);
+					switch ($ts_msg[1]){
+						case '1':
+							$ts = 0;
+							break;
+						case '2':
+							$ts = 1;
+							break;
+						case '4':
+							$ts = 2;	
+							break;
+						case '8':
+							$ts = 3;
+							break;
+					}
+					$ts = $ts << 4;
+					// lower 4 bits for numerator
+					$ts = $ts + (int) $ts_msg[0];
+				default:
+					break;
+				}
+			}
+		}
+
+	// Magic score[0] - score[3]
+	$str .= "MSSC";
+	
+	// Header score[4] - score[7]
+        // score[4] clef not used yet
+        $str .= chr(0);
+        // score[5] key signature
+	$str .= chr($ks);
+	// score[6] time signature
+	$str .= chr($ts); 
+	// score[7] reserved
+	$str .= chr(0);
+
+	// MIDI event -> score notes
+	// Assumption:
+	// - 1 channel
+	// - Note On -> Note Off ->Note On -> Note Off -> ...
+	$track = $this->tracks[$trk_no];
+	$trk_no = $trk_no + 1;
+
+	// Used to convert absolute time to delta time
+	$last = 0;
+	// Used to count notes
+	$note_count = 0;
+	// Used to record notes
+	$score = '';
+		
+	foreach ($track as $msgStr){
+		$msg = explode (' ', $msgStr);
+		$t = (int) $msg[0];
+		$msg[0] = $t - $last;
+		$last = $t;
+		switch($msg[1]){
+			case 'Off':
+				$msg_tmp = explode ('=', $msg[3]);
+				$NOTE_t = $this->KeyToNoteSimp((int) $msg_tmp[1], (int) $msg[0], $timebase);
+				$score .= chr($NOTE_t);
+				$note_count = $note_count + 1;
+				break;
+			default:
+				break;
+		}
+	}
+
+	// score[8] SIZE(MSB)
+	$str .= chr(($note_count >> 8) & 0xFF);
+	// score[9] SIZE(LSB)
+	$str .= chr(($note_count) & 0xFF);
+	// score[10] Reserved
+	$str .= chr(0);
+	// score[11] Reserved
+	$str .= chr(0);
+
+	// NOTES
+	$str .= $score;
+	
+	//padding
+	while(strlen($str)<512){
+		$str .= chr(0);
+	}
+
+	return $str;
+}
+
+//---------------------------------------------------------------
+// returns simplified note
+//---------------------------------------------------------------
+function KeyToNoteSimp($key,$time,$time_base){
+	$noteSharpMap = Array(
+				Array(1,0), /* C  */
+				Array(1,1), /* C# */
+				Array(2,0), /* D  */
+				Array(2,1), /* D# */
+				Array(3,0), /* E  */
+				Array(4,0), /* F  */
+				Array(4,1), /* F# */
+				Array(5,0), /* G  */
+				Array(5,1), /* G# */
+				Array(6,0), /* A  */
+				Array(6,1), /* A# */
+				Array(7,0), /* B  */
+	);
+
+	$octavesMap = Array(
+				1, /* Octave: -1, Key: 48 - 59 */
+				0, /* Octave:  0, Key: 60 - 71 */
+				3, /* Octave:  1, Key: 72 - 83 */
+				2, /* Octave:  2, Key: 84 - 95 */
+	);
+	
+	// calculate the offset and the octave
+	$offset = $key % 12;
+	$octave = ($key - 48) / 12;
+	
+	// calculate the lengths of notes
+	$len = 0;
+	$fraction = 1.0;
+	$FRACTION_TOLERANCE = 0.40;
+	
+	$fraction = (float)$time / $time_base;
+	if ($fraction >= 4.0 - $FRACTION_TOLERANCE){
+		$len = 4;
+	}
+	else if ($fraction >= 2.0 - $FRACTION_TOLERANCE / 2){
+		$len = 0;
+	}
+	else if ($fraction >= 1.0 - $FRACTION_TOLERANCE / 4){
+		$len = 1;	
+	}
+	else if ($fraction >= 0.5 - $FRACTION_TOLERANCE / 8){
+		$len = 2;
+	}
+	else{
+		$len = 3;
+	}
+
+	$note = $noteSharpMap[$offset][0];
+	$sharp = $noteSharpMap[$offset][1];
+	$octaves = $octavesMap[$octave];
+
+	$NOTE = 0;
+	$NOTE = $octaves;
+	$NOTE = $NOTE << 2;
+	$NOTE = $NOTE + $len;
+	$NOTE = $NOTE << 1;
+	$NOTE = $NOTE + $sharp;
+	$NOTE = $NOTE << 3;
+	$NOTE = $NOTE + $note;
+
+	return $NOTE;
 }
 
 //---------------------------------------------------------------
